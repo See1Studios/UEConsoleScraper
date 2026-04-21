@@ -196,7 +196,7 @@ def extract(html: str, log, entry_type: str = "variable") -> list[dict]:
             log(f"[*] '{label}' 방식으로 {len(result)}개 추출")
             for item in result:
                 item["type"] = entry_type
-                if entry_type == "variable" and "default" not in item:
+                if entry_type == "CVar" and "default" not in item:
                     item["default"] = ""
             return result
 
@@ -237,8 +237,8 @@ def _from_tables(soup) -> list[dict]:
             if not cells:
                 continue
             entry = {
-                "name":        cells[name_idx].get_text(strip=True) if name_idx < len(cells) else "",
-                "description": cells[desc_idx].get_text(strip=True) if desc_idx is not None and desc_idx < len(cells) else "",
+                "name": cells[name_idx].get_text(strip=True) if name_idx < len(cells) else "",
+                "help": cells[desc_idx].get_text(strip=True) if desc_idx is not None and desc_idx < len(cells) else "",
             }
             if group:
                 entry["group"] = group
@@ -257,7 +257,7 @@ def _from_definition_lists(soup) -> list[dict]:
         for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
             name = dt.get_text(strip=True)
             if name:
-                results.append({"name": name, "description": dd.get_text(strip=True)})
+                results.append({"name": name, "help": dd.get_text(strip=True)})
     return results
 
 
@@ -268,7 +268,7 @@ def _from_headings(soup) -> list[dict]:
         text = tag.get_text(strip=True)
         if pattern.match(text):
             sib = tag.find_next_sibling(["p", "div", "span"])
-            results.append({"name": text, "description": sib.get_text(strip=True) if sib else ""})
+            results.append({"name": text, "help": sib.get_text(strip=True) if sib else ""})
     return results
 
 
@@ -283,7 +283,7 @@ def _from_code_pattern(soup) -> list[dict]:
                 sib = code.parent.find_next_sibling()
                 if sib:
                     desc = sib.get_text(strip=True)
-            results.append({"name": text, "description": desc})
+            results.append({"name": text, "help": desc})
     return results
 
 
@@ -354,7 +354,7 @@ class App(tk.Tk):
                             ).pack(side="left", padx=4)
 
         ttk.Label(frame, text="저장 경로:").grid(row=3, column=0, sticky="w", **pad)
-        self.output_var = tk.StringVar(value=str(_script_dir / "output_variable_5.6_ko.json"))
+        self.output_var = tk.StringVar(value=str(_script_dir / "output_CVar_5.6_ko.json"))
         ttk.Entry(frame, textvariable=self.output_var).grid(row=3, column=1, sticky="ew", **pad)
         ttk.Button(frame, text="찾아보기", command=self._browse_output
                    ).grid(row=3, column=2, **pad)
@@ -449,7 +449,7 @@ class App(tk.Tk):
     # ── 스크래핑 동작 ────────────────────────────────────────────────────────
 
     def _on_target_change(self):
-        entry_type = "variable" if "Variables" in self.target_var.get() else "command"
+        entry_type = "CVar" if "Variables" in self.target_var.get() else "CCmds"
         version    = self.version_var.get().strip()
         lang       = self.lang_var.get().strip()
         self.output_var.set(str(_script_dir / f"output_{entry_type}_{version}_{lang}.json"))
@@ -473,7 +473,7 @@ class App(tk.Tk):
 
         target_label = self.target_var.get()
         slug       = TARGETS[target_label]
-        entry_type = "variable" if "Variables" in target_label else "command"
+        entry_type = "CVar" if "Variables" in target_label else "CCmds"
         version    = self.version_var.get().strip()
         lang       = self.lang_var.get().strip()
         output     = self.output_var.get().strip()

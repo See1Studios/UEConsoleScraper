@@ -7,24 +7,24 @@ Unreal Engine 공식 문서에서 콘솔 변수(Console Variables)와 콘솔 명
 
 ## 출력 형식
 
-### 콘솔 변수 (`output_variable_*.json`)
+### 콘솔 변수 (`output_CVar_*.json`)
 ```json
 {
   "name": "a.AnimNode.AimOffsetLookAt.Enable",
-  "description": "LookAt AimOffset을 활성화/비활성화합니다.",
+  "help": "LookAt AimOffset을 활성화/비활성화합니다.",
   "group": "애니메이션",
   "default": "1",
-  "type": "variable"
+  "type": "CVar"
 }
 ```
 
-### 콘솔 명령어 (`output_command_*.json`)
+### 콘솔 명령어 (`output_CCmds_*.json`)
 ```json
 {
   "name": "abtest",
-  "description": "단순 변수 두 값을 비교하거나 AB 테스트 시스템을 제어합니다.",
+  "help": "단순 변수 두 값을 비교하거나 AB 테스트 시스템을 제어합니다.",
   "group": "AB 테스트",
-  "type": "command"
+  "type": "CCmds"
 }
 ```
 
@@ -68,10 +68,10 @@ python -m venv .venv
 ```bash
 .venv\Scripts\activate
 
-# 콘솔 변수 수집 (UE 5.6, 한국어)
+# 콘솔 변수 수집 (UE 5.6, 한국어) → output_CVar_5.6_ko.json
 python ue_console_ref_cli.py --target cvars --version 5.6 --lang ko
 
-# 콘솔 명령어 수집 (영어)
+# 콘솔 명령어 수집 (영어) → output_CCmds_5.6_en.json
 python ue_console_ref_cli.py --target commands --lang en
 
 # 옵션
