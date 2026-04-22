@@ -55,8 +55,8 @@ def scrape_with_playwright(url: str, dump_html: bool = False, headed: bool = Fal
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("playwright가 설치되어 있지 않습니다.")
-        print("설치 명령어: pip install playwright && playwright install msedge")
+        print("[오류] playwright가 설치되어 있지 않습니다.")
+        print("        설치: pip install playwright && playwright install msedge")
         sys.exit(1)
 
     print(f"[*] 페이지 로딩 중: {url}")
@@ -67,59 +67,68 @@ def scrape_with_playwright(url: str, dump_html: bool = False, headed: bool = Fal
             headless=not headed,
             args=BROWSER_ARGS,
         )
-
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="ko-KR",
-        )
-
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {} };
-        """)
-
-        page = context.new_page()
-        page.set_extra_http_headers(EXTRA_HEADERS)
-
-        response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        print(f"[*] 응답 상태: {response.status if response else 'unknown'}")
-
-        if response and response.status == 403:
-            print("[!] 403 차단됨. 잠시 대기 후 재시도...")
-            page.wait_for_timeout(3000)
-            response = page.reload(wait_until="networkidle", timeout=60000)
-            print(f"[*] 재시도 응답 상태: {response.status if response else 'unknown'}")
-
         try:
-            page.wait_for_selector("table, article, main, .content", timeout=20000)
-        except Exception:
-            print("[!] 콘텐츠 선택자 대기 타임아웃 - 현재 상태로 진행")
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="ko-KR",
+            )
 
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+            """)
 
-        html = page.content()
+            page = context.new_page()
+            page.set_extra_http_headers(EXTRA_HEADERS)
 
-        if dump_html:
-            html_path = Path("dump.html")
-            html_path.write_text(html, encoding="utf-8")
-            print(f"[*] HTML 덤프 저장: {html_path} ({len(html):,} bytes)")
+            response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            print(f"[*] 응답 상태: {response.status if response else 'unknown'}")
 
-        data = extract_cvars(html, entry_type)
-        browser.close()
+            if response and response.status == 403:
+                print("[!] 403 차단됨. 잠시 대기 후 재시도...")
+                page.wait_for_timeout(3000)
+                response = page.reload(wait_until="networkidle", timeout=60000)
+                print(f"[*] 재시도 응답 상태: {response.status if response else 'unknown'}")
+
+            try:
+                page.wait_for_selector("table, article, main, .content", timeout=20000)
+            except Exception:
+                print("[!] 콘텐츠 선택자 대기 타임아웃 - 현재 상태로 진행")
+
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+
+            html = page.content()
+
+            if dump_html:
+                html_path = Path("dump.html")
+                html_path.write_text(html, encoding="utf-8")
+                print(f"[*] HTML 덤프 저장: {html_path} ({len(html):,} bytes)")
+
+            data = extract_cvars(html, entry_type)
+        finally:
+            browser.close()
 
     return html, data
 
 
 def extract_cvars(html: str, entry_type: str = "CVar") -> list[dict]:
-    from bs4 import BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        print("[오류] beautifulsoup4가 설치되어 있지 않습니다. (pip install beautifulsoup4 lxml)")
+        return []
 
-    soup = BeautifulSoup(html, "lxml")
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception as e:
+        print(f"[오류] HTML 파싱 실패: {e}")
+        return []
 
     title = soup.find("title")
     if title and ("403" in title.get_text() or "Access Denied" in title.get_text()):
@@ -234,6 +243,7 @@ def _extract_from_code_pattern(soup) -> list[dict]:
 
 def save_json(data: list[dict], output_path: str):
     path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"[*] JSON 저장 완료: {path} ({len(data)}개 항목)")

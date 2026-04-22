@@ -50,12 +50,12 @@ python -m venv .venv
 
 ## 사용법
 
-### GUI (`스크래퍼 실행.vbs` 더블클릭)
+### GUI (`run_scraper.vbs` 더블클릭)
 
 콘솔 창 없이 GUI가 바로 실행됩니다.
 
 ```
-스크래퍼 실행.vbs
+run_scraper.vbs
 ```
 
 | 탭 | 기능 |

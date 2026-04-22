@@ -119,50 +119,61 @@ def scrape(url: str, dump_html: bool, headed: bool, log, entry_type: str = "vari
     log(f"[*] 페이지 로딩 중...\n    {url}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(channel="msedge", headless=not headed, args=BROWSER_ARGS)
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="ko-KR",
-        )
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {} };
-        """)
-
-        page = context.new_page()
-        page.set_extra_http_headers(EXTRA_HEADERS)
-
-        response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        log(f"[*] 응답 상태: {response.status if response else 'unknown'}")
-
-        if response and response.status == 403:
-            log("[!] 403 차단됨. 잠시 대기 후 재시도...")
-            page.wait_for_timeout(3000)
-            response = page.reload(wait_until="networkidle", timeout=60000)
-            log(f"[*] 재시도 응답 상태: {response.status if response else 'unknown'}")
+        try:
+            browser = p.chromium.launch(channel="msedge", headless=not headed, args=BROWSER_ARGS)
+        except Exception as e:
+            log(f"[오류] Edge 브라우저를 시작할 수 없습니다: {e}")
+            log("      시스템에 Edge가 없다면 '환경 점검' 탭에서 전체 설치를 실행하세요.")
+            return []
 
         try:
-            page.wait_for_selector("table, article, main, .content", timeout=20000)
-        except Exception:
-            log("[!] 콘텐츠 선택자 대기 타임아웃 - 현재 상태로 진행")
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="ko-KR",
+            )
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+            """)
 
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
+            page = context.new_page()
+            page.set_extra_http_headers(EXTRA_HEADERS)
 
-        html = page.content()
+            response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            log(f"[*] 응답 상태: {response.status if response else 'unknown'}")
 
-        if dump_html:
-            html_path = _script_dir / "dump.html"
-            html_path.write_text(html, encoding="utf-8")
-            log(f"[*] HTML 덤프 저장: {html_path} ({len(html):,} bytes)")
+            if response and response.status == 403:
+                log("[!] 403 차단됨. 잠시 대기 후 재시도...")
+                page.wait_for_timeout(3000)
+                response = page.reload(wait_until="networkidle", timeout=60000)
+                log(f"[*] 재시도 응답 상태: {response.status if response else 'unknown'}")
 
-        data = extract(html, log, entry_type)
-        browser.close()
+            try:
+                page.wait_for_selector("table, article, main, .content", timeout=20000)
+            except Exception:
+                log("[!] 콘텐츠 선택자 대기 타임아웃 - 현재 상태로 진행")
+
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+
+            html = page.content()
+
+            if dump_html:
+                html_path = _script_dir / "dump.html"
+                html_path.write_text(html, encoding="utf-8")
+                log(f"[*] HTML 덤프 저장: {html_path} ({len(html):,} bytes)")
+
+            data = extract(html, log, entry_type)
+        finally:
+            try:
+                browser.close()
+            except Exception:
+                pass
 
     return data
 
@@ -486,6 +497,7 @@ class App(tk.Tk):
                               entry_type=entry_type)
                 if data:
                     path = Path(output)
+                    path.parent.mkdir(parents=True, exist_ok=True)
                     with open(path, "w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=2)
                     self.after(0, lambda: self._log_to(self.scrape_log,
@@ -550,9 +562,14 @@ class App(tk.Tk):
                 log("[*] 패키지 설치 중 (playwright, beautifulsoup4, lxml)...")
                 self._run_cmd([str(VENV_PIP), "install", "-r", str(REQUIREMENTS)], log)
 
-                # 3. playwright msedge 드라이버 설치
-                log("[*] Edge 드라이버 설치 중...")
-                self._run_cmd([str(VENV_PLAYWRIGHT), "install", "msedge"], log)
+                # 3. playwright msedge 드라이버 설치 (시스템 Edge가 있으면 건너뜀)
+                edge_path = next((p for p in EDGE_PATHS if p.exists()), None)
+                if edge_path:
+                    log(f"[*] 시스템 Edge 감지: {edge_path}")
+                    log("[*] Playwright Edge 다운로드를 건너뜁니다.")
+                else:
+                    log("[*] Edge 드라이버 설치 중...")
+                    self._run_cmd([str(VENV_PLAYWRIGHT), "install", "msedge"], log)
 
                 log("[완료] 설치가 완료되었습니다. 점검 실행으로 상태를 확인하세요.")
             except Exception as e:
@@ -563,10 +580,11 @@ class App(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _run_cmd(self, cmd: list, log):
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=creationflags,
         )
         for line in proc.stdout:
             line = line.rstrip()
